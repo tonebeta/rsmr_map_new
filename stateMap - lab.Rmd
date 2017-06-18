@@ -1,0 +1,337 @@
+---
+title: "Geographic Disparity of Risk Standardize Mortality Rate of Sepsis in the US"
+author: ""
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+runtime: shiny  
+---
+
+```{r setup, include=FALSE}
+#C:\Users\109890\Desktop\rsmr_map_new
+
+library(highcharter)
+library(dplyr)
+library(readr)
+#library(viridisLite)
+#library(knitr)
+library(flexdashboard)
+library(ggplot2)
+library(DT)
+
+thm <- 
+  hc_theme(
+    colors = c("#1a6ecc", "#434348", "#90ed7d"),
+    chart = list(
+      backgroundColor = "transparent",
+      style = list(fontFamily = "Source Sans Pro")
+    ),
+    xAxis = list(
+      gridLineWidth = 1
+    )
+  )
+
+# setwd("C:/Users/tonebeta/Desktop/rsmr_map_new")
+
+martine_roc <- read_csv("m_Roc_all.csv")
+martine_rsmr <- read_csv("martine_Modle_all.csv")
+martine_or <- read_csv("martine_Oddratio_all.csv")
+
+angus_roc <- read_csv("a_Roc_all.csv")
+angus_rsmr <- read_csv("angus_Modle_all.csv")
+angus_or <- read_csv("angus_Oddratio_all.csv")
+
+a_rsmr <- data.frame(angus_rsmr)
+m_rsmr <- data.frame(martine_rsmr)
+method <- c('Angus', 'Martine')
+
+```
+By State
+========
+
+Inputs {.sidebar data-width=300}
+-------------------------------------
+
+```{r}
+radioButtons('method', 'Method', method, inline = TRUE)
+sliderInput('year', 'Year', min=2004, max=2011,
+            value=2004, step=1, animate = animationOptions(interval=4000, loop=F))
+```
+
+Row {data-width=500}
+-----------------------------------------------------------------------
+### State Count
+
+```{r}
+
+selectedRsmr2 <- reactive({
+    if (input$method == 'Angus')
+        rsmr <- subset(a_rsmr, Year == input$year)
+    if (input$method == 'Martine')
+        rsmr <- subset(m_rsmr, Year == input$year)
+    rsmr
+})
+
+renderValueBox({
+stateCount <- nrow(selectedRsmr2())
+valueBox(stateCount, icon = "fa-cubes")
+})
+
+```
+
+### AUC
+
+```{r}
+selectedRoc <- reactive({
+    if (input$method == 'Angus')
+        data <- subset(angus_roc, year == input$year) 
+    if (input$method == 'Martine')
+        data <- subset(martine_roc, year == input$year) 
+    as.numeric(data[,1]) 
+})
+renderGauge({
+    rate <- selectedRoc()
+    gauge(rate, min = 0, max = 1, gaugeSectors(
+      success = c(0.7, 1), warning = c(0.4, 0.69), danger = c(0, 0.39)
+    ))
+})
+```
+
+### RSMR Map by state
+
+```{r}
+selectedRsmr3 <- reactive({
+    if (input$method == 'Angus')
+        rsmr <- subset(a_rsmr, Year == input$year)
+    if (input$method == 'Martine')
+        rsmr <- subset(m_rsmr, Year == input$year)
+    rsmr
+})
+
+renderHighchart({
+    
+data("usgeojson")
+    
+rsmr <- selectedRsmr3()
+rsmr$rsmr_mean <- round(rsmr$RSMR, 2)
+
+highchart() %>%
+  hc_add_series_map(usgeojson, rsmr, name = "RMSR of Sepsis",
+                     value = "rsmr_mean", joinBy = c("woename", "State"),
+                     dataLabels = list(enabled = TRUE,
+                                       format = '{point.properties.postalcode}')) %>%
+  hc_colorAxis(max = 40, stops = color_stops(n=5, colors= c("#FFFFFF","#EDBDC1","#EE2737","#5B0E15"))) %>%
+  hc_legend(valueDecimals = 0, valueSuffix = "%") %>%
+  hc_mapNavigation(enabled = TRUE) %>%
+  hc_add_theme(thm)
+})
+
+```
+
+
+Column {.tabset}
+-------------------------------------
+### Rmsr by year
+
+```{r}
+selectedData <- reactive({
+    if (input$method == 'Angus')
+        data <- subset(angus_rsmr, Year == input$year) 
+    if (input$method == 'Martine')
+        data <- subset(martine_rsmr, Year == input$year) 
+    data
+})
+renderDataTable({
+    
+    data <- selectedData()
+    datatable(subset(data[with(data, order(Year,RSMR)),],select=-c(Sample_Size, exp_mortality, obs_mortality)))
+})
+```
+
+### Relative Risk
+
+```{r}
+selectedForestplot <- reactive({
+    if (input$method == 'Angus')
+         rsmr <- subset(a_rsmr, Year == input$year) 
+    if (input$method == 'Martine')
+         rsmr <- subset(m_rsmr, Year == input$year) 
+     rsmr
+})
+renderPlot({
+    rsmr <- selectedForestplot()
+    g<-ggplot(data=rsmr, aes(x=State, y=RelativeRisk, 
+                          ymin=Lower_Bound, ymax=Upper_Bound)) +
+    geom_pointrange() + 
+    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1,1.5,2,2.5,3)) +
+    geom_hline(yintercept=1, lty=2) +  # add a dotted line at x=1 after flip
+    coord_flip() +  # flip coordinates (puts labels on y axis)
+    xlab("State") + ylab("Relative Risk (95% CI)") +
+    theme_grey()  # use a white background
+    print(g)
+})
+```
+
+
+By Method
+========
+
+Inputs {.sidebar data-width=250}
+-------------------------------------
+
+```{r}
+sliderInput('yearM', 'Year', min=2004, max=2011,
+            value=2004, step=1, animate = animationOptions(interval=4000, loop=F))
+```
+
+Row
+-----------------------------------------------------------------------
+### RSMR Map by Angus
+
+```{r}
+
+selectedAngus <- reactive({
+    rsmr <- subset(a_rsmr, Year == input$yearM)
+    rsmr
+})
+
+renderHighchart({
+    
+data("usgeojson")
+    
+a_rsmr <- selectedAngus()
+a_rsmr$rsmr_mean <- round(a_rsmr$RSMR, 2)
+
+
+highchart() %>%
+  hc_add_series_map(usgeojson, a_rsmr, name = "RMSR of Sepsis",
+                     value = "rsmr_mean", joinBy = c("woename", "State"),
+                     dataLabels = list(enabled = TRUE,
+                                       format = '{point.properties.postalcode}')) %>%
+  hc_colorAxis(max = 40, stops = color_stops(n=5, colors= c("#FFFFFF","#EDBDC1","#EE2737","#5B0E15"))) %>%
+  hc_legend(valueDecimals = 0, valueSuffix = "%") %>%
+  hc_mapNavigation(enabled = TRUE) %>%
+  hc_add_theme(thm)
+})
+
+```
+
+### Rmsr by Angus {.tabset}
+
+```{r}
+selectedAngusData <- reactive({
+    data <- subset(angus_rsmr, Year == input$yearM) 
+    data
+})
+renderDataTable({
+    data <- selectedAngusData()
+    datatable(subset(data[with(data, order(Year,RSMR)),],select=-c(Sample_Size, exp_mortality, obs_mortality)))
+})
+```
+
+Row
+-----------------------------------------------------------------------
+### RSMR Map by Martine
+
+```{r}
+
+selectedMartine <- reactive({
+        rsmr <- subset(m_rsmr, Year == input$yearM)
+    rsmr
+})
+
+renderHighchart({
+    
+data("usgeojson")
+    
+m_rsmr <- selectedMartine()
+m_rsmr$rsmr_mean <- round(m_rsmr$RSMR, 2)
+
+
+highchart() %>%
+  hc_add_series_map(usgeojson, m_rsmr, name = "RMSR of Sepsis",
+                     value = "rsmr_mean", joinBy = c("woename", "State"),
+                     dataLabels = list(enabled = TRUE,
+                                       format = '{point.properties.postalcode}')) %>%
+  hc_colorAxis(max = 40, stops = color_stops(n=5, colors= c("#FFFFFF","#EDBDC1","#EE2737","#5B0E15"))) %>%
+  hc_legend(valueDecimals = 0, valueSuffix = "%") %>%
+  hc_mapNavigation(enabled = TRUE) %>%
+  hc_add_theme(thm)
+})
+
+```
+
+### Rmsr by Martine
+
+```{r}
+selectedMartineData <- reactive({
+    data <- subset(martine_rsmr, Year == input$yearM) 
+    data
+})
+renderDataTable({
+    data <- selectedMartineData()
+    datatable(subset(data[with(data, order(Year,RSMR)),],select=-c(Sample_Size, exp_mortality, obs_mortality)))
+})
+```
+
+
+By Risk {data-orientation=rows}
+========
+
+Inputs {.sidebar data-width=300}
+-------------------------------------
+
+```{r}
+radioButtons('methodR', 'Method', method, inline = TRUE)
+sliderInput('yearR', 'Year', min=2004, max=2011,
+            value=2004, step=1, animate = animationOptions(interval=4000, loop=F))
+```
+
+
+Column {.tabset}
+-----------------------------------------------------------------------
+### Risk Factor
+
+```{r}
+selectedOR <- reactive({
+    if (input$methodR == 'Angus')
+        rsmr <- subset(martine_or, Year == input$yearR)
+    if (input$methodR == 'Martine')
+        rsmr <- subset(angus_or, Year == input$yearR)
+    rsmr
+})
+
+renderDataTable({
+    rsmr <- selectedOR()
+    datatable(rsmr)
+    #rsmr <- subset(rsmr[with(rsmr, order(Year,Odds_Ratio)),])
+})
+
+```
+
+### Forest Plot
+
+```{r}
+selectedRRForestplot <- reactive({
+    if (input$methodR == 'Angus')
+         RR <- subset(angus_or, Year == input$yearR) 
+    if (input$methodR == 'Martine')
+         RR <- subset(martine_or, Year == input$yearR) 
+     RR
+})
+
+ 
+renderPlot({
+    RR <- selectedRRForestplot()
+   
+    g<-ggplot(data=RR, aes(x=Variable, y= Odds_Ratio, 
+                          ymin=CI_Lower, ymax=CI_Upper)) +
+    geom_pointrange() + 
+    scale_y_log10(breaks = c(0, 0.5, 1,1.5,2,2.5,3,5,10,15)) +
+    geom_hline(yintercept=1, lty=2) +  # add a dotted line at x=1 after flip
+    coord_flip() +  # flip coordinates (puts labels on y axis)
+    xlab("Risk Variable") + ylab("Relative Risk (95% CI)") +
+    theme_grey()  # use a white background
+    print(g)
+})
+```
