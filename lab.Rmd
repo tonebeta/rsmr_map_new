@@ -1,0 +1,28 @@
+---
+title: "Geographic Disparity of Risk Standardize Mortality Rate of Sepsis in the US"
+author: ""
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    social: menu
+runtime: shiny  
+---
+
+```{r setup, include=FALSE}
+
+```
+By State
+========
+
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Map by state
+
+```{r}
+
+getwd()
+
+```
+
